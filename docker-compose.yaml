@@ -1,0 +1,12 @@
+version: "3"
+services:
+    localstack:
+        container_name: sqs-rust-localstack
+        image: localstack/localstack
+        ports:
+            - 127.0.0.1:4566:4566
+        environment:
+            - SERVICES=sqs
+            - SKIP_SSL_CERT_DOWNLOAD=1
+        volumes:
+            - ./localstack:/docker-entrypoint-initaws.d
