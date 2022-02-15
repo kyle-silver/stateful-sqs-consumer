@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use aws_sdk_sqs::{Client, Endpoint};
 use http::Uri;
 
@@ -28,15 +30,43 @@ async fn main() -> Result<(), aws_sdk_sqs::Error> {
         .await?;
     println!("Response from sending a message: {response:#?}");
 
-    let messages = client.receive().await?;
+    let client = Arc::new(client);
 
-    for message in &messages {
-        let event: Event = serde_json::from_str(message.body().unwrap()).unwrap();
-        println!("Got the message: {event:#?}");
+    let mut polling_handles = Vec::new();
+
+    for id in 0..10 {
+        let client = client.clone();
+        let handle = tokio::spawn(async move {
+            loop {
+                println!("[{id}] Receiving messages...");
+                let messages = client.receive().await.unwrap();
+                for message in &messages {
+                    let event: Event = serde_json::from_str(message.body().unwrap()).unwrap();
+                    println!("[{id}] Got the message: {event:#?}");
+                }
+                let delete_message_output = client.delete(&messages).await.unwrap();
+                println!("[{id}] {delete_message_output:#?}");
+            }
+        });
+        polling_handles.push(handle);
     }
 
-    let delete_message_output = client.delete(&messages).await?;
+    // let handle = tokio::spawn(async move {
+    //     loop {
+    //         println!("Receiving messages...");
+    //         let messages = client.receive().await.unwrap();
+    //         for message in &messages {
+    //             let event: Event = serde_json::from_str(message.body().unwrap()).unwrap();
+    //             println!("Got the message: {event:#?}");
+    //         }
+    //         let delete_message_output = client.delete(&messages).await.unwrap();
+    //         println!("{delete_message_output:#?}");
+    //     }
+    // });
 
-    println!("{delete_message_output:#?}");
+    let _ = futures::future::join_all(polling_handles).await;
+
+    // let _ = tokio::join!(handle);
+
     Ok(())
 }
