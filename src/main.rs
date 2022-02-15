@@ -51,22 +51,7 @@ async fn main() -> Result<(), aws_sdk_sqs::Error> {
         polling_handles.push(handle);
     }
 
-    // let handle = tokio::spawn(async move {
-    //     loop {
-    //         println!("Receiving messages...");
-    //         let messages = client.receive().await.unwrap();
-    //         for message in &messages {
-    //             let event: Event = serde_json::from_str(message.body().unwrap()).unwrap();
-    //             println!("Got the message: {event:#?}");
-    //         }
-    //         let delete_message_output = client.delete(&messages).await.unwrap();
-    //         println!("{delete_message_output:#?}");
-    //     }
-    // });
-
     let _ = futures::future::join_all(polling_handles).await;
-
-    // let _ = tokio::join!(handle);
 
     Ok(())
 }
