@@ -1,11 +1,9 @@
-use aws_sdk_sqs::{model::DeleteMessageBatchRequestEntry, Client, Endpoint};
+use aws_sdk_sqs::{Client, Endpoint};
 use http::Uri;
-use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Event {
-    text: String,
-}
+mod client;
+
+use client::{Event, SqsEventClient};
 
 async fn localstack_client() -> Client {
     let config = aws_config::from_env().load().await;
@@ -19,47 +17,25 @@ async fn localstack_client() -> Client {
 
 #[tokio::main]
 async fn main() -> Result<(), aws_sdk_sqs::Error> {
-    let client = localstack_client().await;
+    let client = SqsEventClient::new(
+        localstack_client().await,
+        "http://localhost:4566/queue/demo-event-stream".to_string(),
+    );
     let response = client
-        .send_message()
-        .queue_url("http://localhost:4566/queue/demo-event-stream")
-        .message_body("Hello, world! 3")
-        .send()
+        .send(&vec![Event {
+            text: "Hello, world!".to_string(),
+        }])
         .await?;
     println!("Response from sending a message: {response:#?}");
 
-    let rcv_message_output = client
-        .receive_message()
-        .max_number_of_messages(10)
-        .queue_url("http://localhost:4566/queue/demo-event-stream")
-        .send()
-        .await?;
-    for message in &rcv_message_output.messages {
-        println!("Got the message: {message:#?}");
+    let messages = client.receive().await?;
+
+    for message in &messages {
+        let event: Event = serde_json::from_str(message.body().unwrap()).unwrap();
+        println!("Got the message: {event:#?}");
     }
 
-    let entries_to_delete = rcv_message_output
-        .messages
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|message| match message.receipt_handle() {
-            Some(receipt_handle) => {
-                let req = DeleteMessageBatchRequestEntry::builder()
-                    .receipt_handle(receipt_handle)
-                    .id(message.message_id().unwrap_or_default())
-                    .build();
-                Some(req)
-            }
-            None => None,
-        })
-        .collect();
-
-    let delete_message_output = client
-        .delete_message_batch()
-        .queue_url("http://localhost:4566/queue/demo-event-stream")
-        .set_entries(Some(entries_to_delete))
-        .send()
-        .await?;
+    let delete_message_output = client.delete(&messages).await?;
 
     println!("{delete_message_output:#?}");
     Ok(())
